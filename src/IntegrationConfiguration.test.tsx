@@ -1,0 +1,23 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {IntegrationConfiguration} from './IntegrationConfiguration';
+import {useRead} from './useRead';
+const access=vi.hoisted(()=>({allowed:true}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:{permissions:access.allowed?['health.read']:[]}}})}));
+vi.mock('./useRead',()=>({useRead:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.allowed=true});
+const mount=()=>render(<MemoryRouter><IntegrationConfiguration/></MemoryRouter>);
+it('denies unauthorized fetch',()=>{access.allowed=false;mount();expect(useRead).not.toHaveBeenCalled();expect(screen.getByText(/do not have access/)).toBeTruthy()});
+it('supports loading, refresh and errors',()=>{vi.mocked(useRead).mockReturnValue(null);const view=mount();expect(screen.getByRole('status')).toBeTruthy();fireEvent.click(screen.getByText('Refresh configuration'));expect(useRead).toHaveBeenLastCalledWith('/integration-configuration',1);vi.mocked(useRead).mockReturnValue({key:'config',error:'Unavailable'});view.rerender(<MemoryRouter><IntegrationConfiguration/></MemoryRouter>);expect(screen.getByRole('alert').textContent).toBe('Unavailable')});
+it('distinguishes presence, invalid config and sandbox from verified readiness',()=>{vi.mocked(useRead).mockReturnValue({key:'config',data:{generated_at:'2026-10-24T00:00:00Z',runtime:'development',items:[{id:'payments',label:'Online payments',mode:'SANDBOX',note:'Test note',checks:[{id:'key',label:'Client key',status:'present'},{id:'origin',label:'Origin',status:'invalid'}]}]}});mount();expect(screen.getByText('Present · not verified')).toBeTruthy();expect(screen.getByText('Invalid')).toBeTruthy();expect(screen.getByText('Sandbox · test')).toBeTruthy();expect(screen.getByText(/not a successful connection test/)).toBeTruthy();expect(screen.getByText('Map request evidence').getAttribute('href')).toBe('/map-health')});
+it('opens configuration guidance in a modal without changing settings',async()=>{
+ vi.mocked(useRead).mockReturnValue({key:'config',data:{generated_at:'bad',runtime:'development',items:[]}});mount();
+ expect(screen.getByText('No integration records available')).toBeTruthy();
+ expect(screen.getByText(/Checked Time unavailable/)).toBeTruthy();
+ expect(screen.queryByRole('dialog')).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Configuration guide'}));
+ expect(await screen.findByRole('dialog')).toBeTruthy();
+ expect(screen.getByText('Changing server settings')).toBeTruthy();
+ expect(screen.getByText(/does not send OTPs/)).toBeTruthy();
+});

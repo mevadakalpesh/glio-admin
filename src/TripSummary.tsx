@@ -1,0 +1,15 @@
+import {Card, CardHeader, CardTitle, CardContent} from '@/components/ui/card';
+import {Badge} from '@/components/ui/badge';
+import type {TripOperationsData} from './TripOperations';
+import {formatJourneyDuration} from './journeyPresentation';
+const time=(v?:string)=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'}):'Not recorded';
+const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).format(n);
+type Journey={created_at:string;departure_at?:string;trip_started_at?:string;trip_completed_at?:string;cancelled_at?:string;estimated_eta_hours?:string;available_seats?:number;seats_booked?:number};
+export function TripSummary({journey:j,operations:o,section}:{journey:Journey;operations?:TripOperationsData;section?:'timeline'|'payout'}){
+ const earnings=o?.potential_passenger_payout;
+ const milestones=[['Trip created',j.created_at],['Published',o?.published_at],['Scheduled departure',j.departure_at],['Trip started',j.trip_started_at],['Trip completed',j.trip_completed_at],...(j.cancelled_at?[['Trip cancelled',j.cancelled_at]]:[])];
+ return <div className={section?'mb-6':'mb-6 grid gap-5 lg:grid-cols-2'}>
+ {section!=='payout'&&<Card><CardHeader><CardTitle>Trip timeline</CardTitle></CardHeader><CardContent><ol className="space-y-5 border-l pl-5">{milestones.map(([name,date])=><li key={name}><p className="font-medium">{name}</p><p className="text-sm text-muted-foreground">{time(date||undefined)}</p></li>)}</ol><p className="mt-5 text-sm text-muted-foreground">Estimated journey: {formatJourneyDuration(j.estimated_eta_hours,true)} · Times in IST</p></CardContent></Card>}
+ {section!=='timeline'&&<Card><CardHeader><CardTitle className="flex items-center justify-between">Passenger trip summary<Badge variant="outline">Estimate</Badge></CardTitle></CardHeader><CardContent className="space-y-4"><dl className="grid grid-cols-2 gap-4">{Object.entries({'Pickup service':o?.delivery_mode?.replaceAll('_',' ')||'Not recorded','Seat capacity':j.available_seats??'Not recorded','Seats booked':j.seats_booked??'Not recorded','Price per seat':o?.seat_price!=null?money(Number(o.seat_price)):'Not recorded'}).map(([key,value])=><div key={key}><dt className="text-sm text-muted-foreground">{key}</dt><dd className="mt-1 font-medium capitalize">{value}</dd></div>)}</dl>{earnings&&<div className="space-y-3 border-t pt-4">{[['Potential gross',earnings.gross],['Estimated platform fee',earnings.platform_fee],['Potential passenger payout',earnings.net]].map(([label,value])=><div key={label} className="flex justify-between gap-4"><span>{label}</span><strong>{money(Number(value))}</strong></div>)}<p className="text-xs text-muted-foreground">Estimate if the listed seat capacity is booked at the trip seat price. Actual passenger segments, refunds and settlement decisions can change earnings. This is not a wallet balance or confirmed payout.</p></div>}</CardContent></Card>}
+ </div>;
+}

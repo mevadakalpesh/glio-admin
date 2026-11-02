@@ -1,0 +1,12 @@
+import {afterEach,it,expect,vi} from 'vitest';
+import {render,screen,cleanup,fireEvent} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {TripOperations,type TripOperationsData} from './TripOperations';
+const access=vi.hoisted(()=>({permissions:['people.read','payments.read','tracking.live.read','tracking.evidence.read']}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:access}})}));
+afterEach(()=>{cleanup();access.permissions=['people.read','payments.read','tracking.live.read','tracking.evidence.read'];});
+const data:TripOperationsData={ownership_type:'self_owned',delivery_mode:'door_to_door',seat_price:'60.00',pickup_flexibility_km:2,trip_state:'started',delay_minutes:0,is_tracking_active:true,published_at:null,vehicle:{id:1,label:'Bike'},traveler:{id:'person',name:'Test traveler'},linked_rides:{items:[{id:'ride',reference:'R0002',status_label:'BOOKED',origin:{city:'Chuli'},destination:{city:'Shaktinagar'},passenger_count:1,final_amount:'27.82',escrow_status:'held'}],total:26,page:1,page_size:25}};
+function open(status='STARTED',onPage=vi.fn()){render(<MemoryRouter><TripOperations id="trip" status={status} data={data} onPage={onPage}/></MemoryRouter>);return onPage;}
+it('shows distinct trip price and recorded ride fare with scoped navigation',()=>{const next=open();expect(screen.getByText('₹60.00')).toBeTruthy();expect(screen.getByText('₹27.82')).toBeTruthy();expect(screen.getByText('Door to door')).toBeTruthy();expect(screen.getByRole('link',{name:'View ride'}).getAttribute('href')).toBe('/trips?kind=rides&id=ride');expect(screen.getByRole('link',{name:'Payments'}).getAttribute('href')).toBe('/payments?reference=R0002');fireEvent.click(screen.getByRole('button',{name:'Next rides'}));expect(next).toHaveBeenCalledWith(2);});
+it('does not offer precise tracking or restricted account/payment links without permission',()=>{access.permissions=[];open();expect(screen.queryByRole('button',{name:'View live location'})).toBeNull();expect(screen.queryByRole('button',{name:'Inspect recorded trip locations'})).toBeNull();expect(screen.queryByRole('link',{name:'Payments'})).toBeNull();expect(screen.queryByRole('link',{name:'View traveler account'})).toBeNull();});
+it('completed trips keep history access without starting live tracking',()=>{open('COMPLETED');expect(screen.queryByRole('button',{name:'View live location'})).toBeNull();expect(screen.getByRole('button',{name:'Inspect recorded trip locations'})).toBeTruthy();expect(screen.queryByRole('dialog')).toBeNull();});

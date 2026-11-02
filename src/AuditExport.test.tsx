@@ -1,0 +1,20 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,fireEvent,cleanup,waitFor} from '@testing-library/react';
+import {AuditExport} from './AuditExport';
+const mock=vi.hoisted(()=>({api:vi.fn(),permissions:['audit.read','audit.export']}));
+vi.mock('./api',()=>({api:mock.api}));vi.mock('./useAuth',()=>({useAuth:()=>({session:{csrf_token:'csrf',staff:{permissions:mock.permissions}}})}));
+const filters={from:'2026-10-01',to:'2026-10-02'},result={csv:'\ufeff"Gilo report"\r\n',filename:'gilo-audit-summary-2026-10-01-2026-10-02.csv',generated_at:'2026-10-22T00:00:00Z'};
+afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();mock.api.mockReset();mock.permissions=['audit.read','audit.export'];vi.useRealTimers();});
+function mount(){render(<AuditExport filters={filters}/>);}
+function reason(){fireEvent.change(screen.getByLabelText('Audit export reason'),{target:{value:'Review support performance'}});}
+it('requires both permissions and a reason',()=>{mock.permissions=['audit.read'];mount();expect(screen.queryByText('Download audit CSV')).toBeNull();cleanup();mock.permissions=['audit.export'];mount();expect(screen.queryByText('Download audit CSV')).toBeNull();cleanup();mock.permissions=['audit.read','audit.export'];mount();expect(screen.getByText('Download audit CSV')).toHaveProperty('disabled',true);expect(mock.api).not.toHaveBeenCalled();});
+it('downloads fresh CSV with CSRF, preserves report dates and cleans the object URL',async()=>{
+ const create=vi.fn(()=> 'blob:report'),revoke=vi.fn();vi.stubGlobal('URL',Object.assign(URL,{createObjectURL:create,revokeObjectURL:revoke}));const click=vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(()=>{});
+ mock.api.mockResolvedValue(result);mount();reason();fireEvent.click(screen.getByText('Download audit CSV'));await screen.findByText(/Download requested/);
+ expect(mock.api).toHaveBeenCalledWith('/audit/export',expect.objectContaining({method:'POST',csrf:'csrf',body:{filters,reason:'Review support performance'}}));expect(create).toHaveBeenCalled();expect(click).toHaveBeenCalledTimes(1);expect(document.querySelector('a[download]')).toBeNull();await waitFor(()=>expect(revoke).toHaveBeenCalledWith('blob:report'),{timeout:2000});
+});
+it('prevents duplicate clicks and ignores completion after unmount',async()=>{let finish:(v:unknown)=>void=()=>{};mock.api.mockImplementation(()=>new Promise(r=>{finish=r;}));mount();reason();fireEvent.click(screen.getByText('Download audit CSV'));fireEvent.click(screen.getByText('Preparing audit export…'));expect(mock.api).toHaveBeenCalledTimes(1);const signal=mock.api.mock.calls[0][1].signal;cleanup();expect(signal.aborted).toBe(true);finish(result);await Promise.resolve();expect(document.querySelector('a[download]')).toBeNull();});
+it('failed export allows retry and never claims a download succeeded',async()=>{mock.api.mockRejectedValue(Error('Export unavailable'));mount();reason();fireEvent.click(screen.getByText('Download audit CSV'));await screen.findByRole('alert');expect(screen.queryByText(/Download requested/)).toBeNull();expect(screen.getByText('Download audit CSV')).toHaveProperty('disabled',false);fireEvent.click(screen.getByText('Download audit CSV'));await waitFor(()=>expect(mock.api).toHaveBeenCalledTimes(2));});
+it('rejects malformed export responses',async()=>{mock.api.mockResolvedValue({...result,filename:'../../unsafe.csv'});mount();reason();fireEvent.click(screen.getByText('Download audit CSV'));await screen.findByRole('alert');expect(screen.queryByText(/Download requested/)).toBeNull();});
+
+it('requires applied dates before allowing export',()=>{render(<AuditExport filters={{action:'staff.updated'}}/>);reason();expect(screen.getByText('Download audit CSV')).toHaveProperty('disabled',true);expect(screen.getByText(/Apply both date filters/)).toBeTruthy();});

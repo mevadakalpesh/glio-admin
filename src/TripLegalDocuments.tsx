@@ -1,0 +1,3 @@
+import {NotificationTemplates,type TemplateConfig} from './NotificationTemplates';
+const config:TemplateConfig={permission:'content.trip_legal.manage',path:'/trip-legal-documents',heading:'Traveler terms',description:'Publish the traveler terms in English for passenger-carrying trips. The baseline is the existing testing summary, not a production policy. Save a draft, review the complete text, then publish explicitly. Existing journeys keep their recorded acceptance. New trip publications must acknowledge the current text bundle. Have production wording reviewed before launch.',labels:{traveler_terms:'Traveler terms'},bodyLimit:20000,legal:true,legalAudience:'new trip publications'};
+export function TripLegalDocuments(){return <NotificationTemplates config={config}/>;}

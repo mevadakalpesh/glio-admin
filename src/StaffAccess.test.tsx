@@ -1,0 +1,40 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,waitFor} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {MemoryRouter} from 'react-router-dom';
+import {Access} from './Access';
+import {api} from './api';
+const auth=vi.hoisted(()=>({permissions:['staff.read','staff.manage']}));
+vi.mock('./api',()=>({api:vi.fn()}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{csrf_token:'csrf',staff:{id:'owner',role:'owner',permissions:auth.permissions}},reload:vi.fn()})}));
+afterEach(()=>{cleanup();vi.resetAllMocks();auth.permissions=['staff.read','staff.manage'];});
+const staff={id:'staff-id',name:'Test Staff',email:'staff@example.test',role:'operations',active:true,assigned_states:[],invitation_state:'accepted'};
+it('opens invite from the header and clears drafts on dismissal',async()=>{
+ vi.mocked(api).mockResolvedValue({items:[],total:0,page:1});
+ render(<MemoryRouter><Access/></MemoryRouter>);
+ expect(screen.queryByLabelText('Full name')).toBeNull();
+ await userEvent.click(screen.getByRole('button',{name:'Invite staff'}));
+ expect(await screen.findByRole('dialog')).toBeTruthy();
+ await userEvent.type(screen.getByLabelText('Full name'),'Draft name');
+ await userEvent.click(screen.getByRole('button',{name:'Cancel'}));
+ await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ await userEvent.click(screen.getByRole('button',{name:'Invite staff'}));
+ expect(await screen.findByLabelText('Full name')).toHaveProperty('value','');
+});
+it('opens access editing from the row action menu',async()=>{
+ vi.mocked(api).mockResolvedValue({items:[staff],total:1,page:1});
+ render(<MemoryRouter><Access/></MemoryRouter>);
+ await userEvent.click(await screen.findByRole('button',{name:'Actions for Test Staff'}));
+ await userEvent.click(await screen.findByRole('menuitem',{name:'Edit access'}));
+ expect(await screen.findByRole('dialog')).toBeTruthy();
+ expect(screen.getByText('Update access · Test Staff')).toBeTruthy();
+ expect(screen.getByLabelText('Reason')).toHaveProperty('required',true);
+});
+it('keeps invitation and edit actions unavailable to read-only staff',async()=>{
+ auth.permissions=['staff.read'];
+ vi.mocked(api).mockResolvedValue({items:[staff],total:1,page:1});
+ render(<MemoryRouter><Access/></MemoryRouter>);
+ await screen.findByText('Test Staff');
+ expect(screen.queryByRole('button',{name:'Invite staff'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'Actions for Test Staff'})).toBeNull();
+});

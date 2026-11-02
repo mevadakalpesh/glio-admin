@@ -1,0 +1,12 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent} from '@testing-library/react';
+import {MapHealth} from './MapHealth';
+import {useRead} from './useRead';
+const access=vi.hoisted(()=>({allowed:true}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:{permissions:access.allowed?['health.read']:[]}}})}));
+vi.mock('./useRead',()=>({useRead:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.allowed=true});
+it('denies access without making a request',()=>{access.allowed=false;render(<MapHealth/>);expect(useRead).not.toHaveBeenCalled();expect(screen.getByText(/do not have access/)).toBeTruthy()});
+it('loads, refreshes and reports unavailable storage',()=>{vi.mocked(useRead).mockReturnValue(null);render(<MapHealth/>);expect(screen.getByRole('status')).toBeTruthy();fireEvent.click(screen.getByText('Refresh map evidence'));expect(useRead).toHaveBeenLastCalledWith('/map-health',1)});
+it('distinguishes missing evidence from recorded outcomes',()=>{vi.mocked(useRead).mockReturnValue({key:'map',data:{generated_at:'2026-10-24T00:00:00Z',items:[{id:'google_routes',label:'Google routes',status:'not_recorded'},{id:'mapbox_routes',label:'Mapbox route fallback',status:'recorded',requests:2,responses:1,failures:0,rate_limits:1}]}});render(<MapHealth/>);expect(screen.getByText(/No request evidence recorded/)).toBeTruthy();expect(screen.getByText('Rate-limit errors (429)')).toBeTruthy();expect(screen.getByText(/not billing totals/)).toBeTruthy()});
+it('shows errors without success evidence',()=>{vi.mocked(useRead).mockReturnValue({key:'map',error:'Map monitoring unavailable'});render(<MapHealth/>);expect(screen.getByRole('alert').textContent).toBe('Map monitoring unavailable');expect(screen.queryByText('Recorded requests')).toBeNull()});

@@ -1,0 +1,11 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup} from '@testing-library/react';
+import {VerificationHistory} from './VerificationHistory';
+import {useRead} from './useRead';
+const access=vi.hoisted(()=>({allowed:true}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:{permissions:access.allowed?['verification.read']:[]}}})}));
+vi.mock('./useRead',()=>({useRead:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.allowed=true;});
+it('does not read without permission',()=>{access.allowed=false;render(<VerificationHistory kind="vehicles" id="record"/>);expect(useRead).not.toHaveBeenCalled();});
+it('scopes review history and explains historical approval',()=>{vi.mocked(useRead).mockReturnValue({key:'history',data:{items:[{id:'decision',decision:'correction_requested',reason:'Replace unreadable licence',reviewer_id:'staff',created_at:null,expires_on:null}],total:1,page:1,page_size:25}});render(<VerificationHistory kind="vehicles" id="record"/>);expect(useRead).toHaveBeenCalledWith('/verification/vehicles/record/history?page=1',0);expect(screen.getByText('Replace unreadable licence')).toBeTruthy();expect(screen.getByText(/do not prove current approval/)).toBeTruthy();});
+it('shows unavailable responses as errors, not empty successful history',()=>{vi.mocked(useRead).mockReturnValue({key:'history',error:'Unable to load history'});render(<VerificationHistory kind="vehicles" id="record"/>);expect(screen.getByRole('alert').textContent).toBe('Unable to load history');expect(screen.queryByText('No manual decisions recorded.')).toBeNull();});

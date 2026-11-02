@@ -1,0 +1,14 @@
+import {afterEach,it,expect,vi} from 'vitest';
+import {render,screen,fireEvent,cleanup} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {SystemSettings} from './SystemSettings';
+const state=vi.hoisted(()=>({permissions:['policies.read','health.read','master-data.read']}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:state}})}));
+vi.mock('./VerificationPolicies',()=>({VerificationPolicies:()=> <p>Verification controls</p>}));
+vi.mock('./Policies',()=>({Policies:()=> <p>Journey policy controls</p>}));
+vi.mock('./IntegrationConfiguration',()=>({IntegrationConfiguration:()=> <p>Integration controls</p>}));
+afterEach(()=>{cleanup();state.permissions=['policies.read','health.read','master-data.read'];});
+const mount=(path='/system-settings')=>render(<MemoryRouter initialEntries={[path]}><SystemSettings/></MemoryRouter>);
+it('offers the settings directory and filters cards',()=>{mount();expect(screen.getByRole('heading',{name:'System Settings'})).toBeTruthy();expect(screen.getByRole('link',{name:'Open verification requirements'}).getAttribute('href')).toBe('/system-settings?section=verification');fireEvent.change(screen.getByLabelText('Search system settings'),{target:{value:'verification requirements'}});expect(screen.queryByRole('link',{name:'Open master data'})).toBeNull();});
+it('opens verification directly and switches to journey settings',()=>{mount('/system-settings?section=verification');expect(screen.getByText('Verification controls')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Journey policies'}));expect(screen.getByText('Journey policy controls')).toBeTruthy();});
+it('does not mount unauthorized configuration from a deep link',()=>{state.permissions=['master-data.read'];mount('/system-settings?section=verification');expect(screen.queryByText('Verification controls')).toBeNull();expect(screen.queryByRole('link',{name:'Open verification requirements'})).toBeNull();expect(screen.getByRole('link',{name:'Open master data'})).toBeTruthy();});

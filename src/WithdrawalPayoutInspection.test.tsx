@@ -1,0 +1,14 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent} from '@testing-library/react';
+import {WithdrawalPayoutInspection} from './WithdrawalPayoutInspection';
+import {api} from './api';
+const access=vi.hoisted(()=>({allowed:true}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{csrf_token:'csrf',staff:{permissions:access.allowed?['withdrawals.inspect']:[]}}})}));
+vi.mock('./api',()=>({api:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.allowed=true});
+function open(){render(<WithdrawalPayoutInspection id="request"/>);fireEvent.click(screen.getByText('Inspect payout accounting'));fireEvent.change(screen.getByLabelText('Payout inspection reason'),{target:{value:'Review wallet recovery'}});fireEvent.click(screen.getByText('Load payout accounting'))}
+it('does not read or show controls without permission',()=>{access.allowed=false;render(<WithdrawalPayoutInspection id="request"/>);expect(screen.queryByRole('button')).toBeNull();expect(api).not.toHaveBeenCalled()});
+it('requires a reason and explains missing attempts without claiming no bank payment',async()=>{vi.mocked(api).mockResolvedValue({attempt:null,postings:[]});open();expect(await screen.findByText(/does not establish whether an external bank payment occurred/)).toBeTruthy();expect(vi.mocked(api).mock.calls[0][1]).toMatchObject({csrf:'csrf',body:{reason:'Review wallet recovery'}})});
+it('shows verified reversal with separate balance and reserve changes',async()=>{vi.mocked(api).mockResolvedValue({attempt:{status:'reversed',accounting_state:'restored',amount:'25.00',last_checked_at:null,review_required:false},postings:[{id:'posting',kind:'reversal_credit',amount:'25.00',balance_before:'75.00',balance_after:'100.00',reserve_before:'0.00',reserve_after:'0.00'}]});open();await screen.findByText('Withdrawal restored to wallet');expect(screen.getByText('Balance: ₹75.00 → ₹100.00')).toBeTruthy();expect(screen.getByText('Reserved: ₹0.00 → ₹0.00')).toBeTruthy();expect(screen.queryByText('Submit transfer')).toBeNull()});
+it('conflicts retain review warning and cannot be overridden',async()=>{vi.mocked(api).mockResolvedValue({attempt:{status:'review_required',accounting_state:'reserved',amount:'25.00',last_checked_at:null,review_required:true},postings:[]});open();expect(await screen.findByRole('alert')).toBeTruthy();expect(screen.getByText('Funds remain reserved')).toBeTruthy();expect(screen.queryByText('Release funds')).toBeNull()});
+it('clears failed results and closes inspection',async()=>{vi.mocked(api).mockRejectedValue(Error('Unavailable'));open();await screen.findByRole('alert');fireEvent.click(screen.getByText('Close payout inspection'));expect(screen.queryByRole('alert')).toBeNull();expect(screen.getByText('Inspect payout accounting')).toBeTruthy()});

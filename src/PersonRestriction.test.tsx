@@ -1,0 +1,27 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {PersonRestriction} from './PersonRestriction';
+import {api} from './api';
+const access=vi.hoisted(()=>({permissions:['people.restrict']}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:{id:'staff',permissions:access.permissions},csrf_token:'csrf'}})}));
+vi.mock('./api',()=>({api:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.permissions=['people.restrict'];});
+const show=()=>render(<MemoryRouter><PersonRestriction id="user"/></MemoryRouter>);
+const preview={preview_id:'preview',restricted:false,requested_restricted:true,version:0,impact:{onboard_rides:1},expires_at:new Date(Date.now()+300000).toISOString()};
+it('does not fetch or render controls without permission',()=>{access.permissions=[];show();expect(api).not.toHaveBeenCalled();expect(screen.queryByText('Review account impact')).toBeNull();});
+it('requires preview and reason, then confirms without deactivating existing journeys',async()=>{vi.mocked(api).mockResolvedValueOnce(preview).mockResolvedValueOnce({restricted:true,version:1});show();fireEvent.click(screen.getByText('Review account impact'));await screen.findByText('Current access: New journeys allowed');fireEvent.change(screen.getByLabelText('Account-access reason'),{target:{value:'Investigate repeated safety report'}});fireEvent.click(screen.getByText('Confirm restriction'));await screen.findByText(/New journeys are restricted/);expect(api).toHaveBeenLastCalledWith('/people/user/restriction',expect.objectContaining({body:expect.objectContaining({preview_id:'preview',reason:'Investigate repeated safety report',operation_id:expect.any(String)})}));});
+it('uncertain result retries the same operation identity and reason',async()=>{vi.mocked(api).mockResolvedValueOnce(preview).mockRejectedValueOnce(Error('Network unavailable')).mockResolvedValueOnce({restricted:true,version:1});show();fireEvent.click(screen.getByText('Review account impact'));await screen.findByText('Current access: New journeys allowed');fireEvent.change(screen.getByLabelText('Account-access reason'),{target:{value:'Investigate repeated safety report'}});fireEvent.click(screen.getByText('Confirm restriction'));await screen.findByRole('alert');const first=vi.mocked(api).mock.calls[1][1];fireEvent.click(screen.getByText('Retry same update'));await screen.findByText(/New journeys are restricted/);expect(vi.mocked(api).mock.calls[2][1]?.body).toEqual(first?.body);});
+it('defaults a restricted customer to restoration and refreshes details only after success',async()=>{
+ const onChanged=vi.fn();
+ vi.mocked(api).mockResolvedValueOnce({...preview,restricted:true,requested_restricted:false}).mockResolvedValueOnce({restricted:false,version:2});
+ render(<MemoryRouter><PersonRestriction id="user" restricted onChanged={onChanged}/></MemoryRouter>);
+ fireEvent.click(screen.getByText('Review account impact'));
+ await screen.findByText('Current access: New journeys restricted');
+ expect(api).toHaveBeenCalledWith('/people/user/restriction/preview',expect.objectContaining({body:{restricted:false}}));
+ expect(onChanged).not.toHaveBeenCalled();
+ fireEvent.change(screen.getByLabelText('Account-access reason'),{target:{value:'Review complete, access can be restored'}});
+ fireEvent.click(screen.getByText('Confirm restored access'));
+ await screen.findByText(/restriction is removed/);
+ expect(onChanged).toHaveBeenCalledOnce();
+});

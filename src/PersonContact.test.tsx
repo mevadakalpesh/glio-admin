@@ -1,0 +1,11 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent,waitFor} from '@testing-library/react';
+import {PersonContact} from './PersonContact';
+import {api} from './api';
+const access=vi.hoisted(()=>({permissions:['people.contact.read']}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{staff:{id:'staff',permissions:access.permissions},csrf_token:'csrf'}})}));
+vi.mock('./api',()=>({api:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.permissions=['people.contact.read'];});
+it('requires permission and a reason before fetching contact details',()=>{access.permissions=[];render(<PersonContact id="user"/>);expect(api).not.toHaveBeenCalled();expect(screen.queryByText('Reveal contact details')).toBeNull();});
+it('reveals only on explicit audited request and clears when backgrounded',async()=>{vi.mocked(api).mockResolvedValue({phone:'9876543210',dial_code:'91',email:null,viewed_at:new Date().toISOString()});render(<PersonContact id="user"/>);fireEvent.change(screen.getByLabelText('Contact-access reason'),{target:{value:'Passenger support callback'}});fireEvent.click(screen.getByText('Reveal contact details'));await screen.findByText('+91 9876543210');expect(api).toHaveBeenCalledWith('/people/user/contact',expect.objectContaining({method:'POST',csrf:'csrf',body:{reason:'Passenger support callback'}}));fireEvent(window,new Event('pagehide'));expect(screen.queryByText('+91 9876543210')).toBeNull();});
+it('does not expose provider errors or malformed response data',async()=>{vi.mocked(api).mockRejectedValue(Error('secret internal data'));render(<PersonContact id="user"/>);fireEvent.change(screen.getByLabelText('Contact-access reason'),{target:{value:'Passenger support callback'}});fireEvent.click(screen.getByText('Reveal contact details'));await waitFor(()=>expect(screen.getByRole('alert').textContent).not.toContain('secret'));});

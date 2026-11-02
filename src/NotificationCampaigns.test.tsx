@@ -1,0 +1,28 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent,waitFor} from '@testing-library/react';
+import {NotificationCampaigns} from './NotificationCampaigns';
+import {useRead} from './useRead';
+import {api} from './api';
+const access=vi.hoisted(()=>({allowed:true}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{csrf_token:'test',staff:{permissions:access.allowed?['notifications.campaigns.manage']:[]}}})}));
+vi.mock('./useRead',()=>({useRead:vi.fn()}));
+vi.mock('./api',()=>({api:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.allowed=true;});
+it('does not fetch or expose composer without permission',()=>{access.allowed=false;render(<NotificationCampaigns/>);expect(useRead).not.toHaveBeenCalled();expect(screen.queryByText('Create campaign')).toBeNull();});
+it('requires preview and explicit confirmation before enqueueing',async()=>{
+ vi.mocked(useRead).mockReturnValue({key:'campaigns',data:{items:[],has_more:false}});
+ vi.mocked(api).mockResolvedValueOnce({audience_count:12}).mockResolvedValueOnce({});
+ render(<NotificationCampaigns/>);expect(api).not.toHaveBeenCalled();
+ fireEvent.click(screen.getByRole('button',{name:'Create campaign'}));
+ fireEvent.change(screen.getByLabelText('Title'),{target:{value:'Happy weekend'}});
+ fireEvent.change(screen.getByLabelText('Message'),{target:{value:'Plan your next journey with Gilo.'}});
+ fireEvent.click(screen.getByRole('button',{name:'Preview campaign'}));
+ await screen.findByRole('button',{name:'Confirm send'});
+ expect(api).toHaveBeenCalledTimes(1);
+ expect(vi.mocked(api).mock.calls[0][0]).toBe('/notification-campaigns/preview');
+ fireEvent.click(screen.getByRole('button',{name:'Confirm send'}));
+ await waitFor(()=>expect(screen.getByRole('status').textContent).toContain('queued'));
+ expect(vi.mocked(api).mock.calls[1][0]).toBe('/notification-campaigns');
+ expect(vi.mocked(api).mock.calls[1][1]?.body).toEqual(vi.mocked(api).mock.calls[0][1]?.body);
+});
+it('shows API failure without claiming a successful send',()=>{vi.mocked(useRead).mockReturnValue({key:'campaigns',error:'Service unavailable'});render(<NotificationCampaigns/>);expect(screen.getByRole('alert').textContent).toBe('Service unavailable');expect(screen.queryByText('Campaign queued for background sending.')).toBeNull();});

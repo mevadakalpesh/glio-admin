@@ -1,0 +1,11 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {render,screen,cleanup,fireEvent,waitFor} from '@testing-library/react';
+import {WithdrawalReserveInspection} from './WithdrawalReserveInspection';
+import {api} from './api';
+const access=vi.hoisted(()=>({allowed:true}));
+vi.mock('./useAuth',()=>({useAuth:()=>({session:{csrf_token:'csrf-test',staff:{permissions:access.allowed?['withdrawals.inspect']:[]}}})}));
+vi.mock('./api',()=>({api:vi.fn()}));
+afterEach(()=>{cleanup();vi.resetAllMocks();access.allowed=true});
+it('does not load evidence without explicit permission and reason',()=>{access.allowed=false;render(<WithdrawalReserveInspection id="id"/>);expect(screen.queryByText('Inspect reserve')).toBeNull();expect(api).not.toHaveBeenCalled()});
+it('loads reasoned evidence and clears it on close',async()=>{vi.mocked(api).mockResolvedValue({status:'mismatch',reserved_amount:'20.00',pending_request_amount:'30.00',difference_amount:'-10.00',pending_records_examined:1,truncated:false,invalid_amount_records:0,legacy_records:0,package_linked_records:0,wallet_status:'active',generated_at:'2026-10-24T00:00:00Z'});render(<WithdrawalReserveInspection id="id"/>);fireEvent.click(screen.getByText('Inspect reserve'));fireEvent.change(screen.getByLabelText('Inspection reason'),{target:{value:'Investigate reserve mismatch'}});fireEvent.click(screen.getByText('Load reserve evidence'));await screen.findByText('Reserve mismatch — investigate');expect(api).toHaveBeenCalledWith('/withdrawals/id/reserve-inspection',expect.objectContaining({method:'POST',csrf:'csrf-test',body:{reason:'Investigate reserve mismatch'}}));fireEvent.click(screen.getByText('Close inspection'));expect(screen.queryByText(/Reserve minus requests/)).toBeNull()});
+it('handles failures without showing a balanced state',async()=>{vi.mocked(api).mockRejectedValue(Error('Unavailable'));render(<WithdrawalReserveInspection id="id"/>);fireEvent.click(screen.getByText('Inspect reserve'));fireEvent.change(screen.getByLabelText('Inspection reason'),{target:{value:'Review requested reserve'}});fireEvent.click(screen.getByText('Load reserve evidence'));await waitFor(()=>expect(screen.getByRole('alert').textContent).toBe('Unavailable'));expect(screen.queryByText('Recorded reserve matches pending requests')).toBeNull()});

@@ -1,0 +1,3 @@
+import {NotificationTemplates,type TemplateConfig} from './NotificationTemplates';
+const config:TemplateConfig={compact:true,permission:'content.ride_legal.manage',path:'/ride-legal-documents',heading:'Ride terms and privacy',description:'Publish the rider terms and ride privacy document in English. The baseline is the existing testing summary, not a production policy. Save a draft, review the complete text, then publish explicitly. Existing journeys keep their recorded acceptance. New requests must acknowledge the current text bundle. Have production wording reviewed before launch.',labels:{rider_terms:'Rider terms',ride_privacy:'Ride privacy'},bodyLimit:20000,legal:true};
+export function RideLegalDocuments(){return <NotificationTemplates config={config}/>;}

@@ -1,0 +1,21 @@
+import {it,expect,vi,afterEach} from 'vitest';
+import {renderHook,waitFor,act,cleanup} from '@testing-library/react';
+import {useRead} from './useRead';
+const mock=vi.hoisted(()=>({api:vi.fn()}));
+vi.mock('./api',()=>({api:mock.api}));
+afterEach(()=>{cleanup();mock.api.mockReset();});
+it('keeps the same trip mounted during refresh, but clears it on access failure or trip change',async()=>{
+ mock.api.mockResolvedValueOnce({reference:'T0001'});
+ const view=renderHook(({path,version})=>useRead(path,version,true),{initialProps:{path:'/trip/1',version:0}});
+ await waitFor(()=>expect(view.result.current?.data).toEqual({reference:'T0001'}));
+ let reject!:(e:Error)=>void;
+ mock.api.mockImplementationOnce(()=>new Promise((_,r)=>{reject=r;}));
+ view.rerender({path:'/trip/1',version:1});
+ expect(view.result.current?.data).toEqual({reference:'T0001'});
+ await act(async()=>reject(new Error('Access denied')));
+ expect(view.result.current?.data).toBeUndefined();
+ expect(view.result.current?.error).toBe('Access denied');
+ mock.api.mockImplementationOnce(()=>new Promise(()=>{}));
+ view.rerender({path:'/trip/2',version:1});
+ expect(view.result.current).toBeNull();
+});

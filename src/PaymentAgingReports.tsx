@@ -1,0 +1,32 @@
+import {AdminTable} from '@/components/ui/admin-table';
+import {Input} from '@/components/ui/input';
+import {NativeSelect} from '@/components/ui/native-select';
+import {useEffect,useRef,useState} from 'react';
+import {Link,useSearchParams} from 'react-router-dom';
+import {api} from './api';
+import {useAuth} from './useAuth';
+import {useRead} from './useRead';
+import {Button} from '@/components/ui/button';
+type Report={filters:Record<string,string>;items:{category:string;bucket:string;label:string;age_label:string;basis:string;clock:string;records:number;amount:string|null;invalid_amounts:number;needs_attention:number}[];total_records:number;states:{code:string;name:string}[];scope:string;basis:string;generated_at:string};
+export function PaymentAgingReports(){const {session}=useAuth(),[params]=useSearchParams();return session?.staff.permissions.includes('finance.reports.read')?<PaymentAgingReport key={params.toString()}/>:<p>You do not have access to payment aging reports.</p>;}
+function PaymentAgingReport(){
+ const {session}=useAuth(),[params,setParams]=useSearchParams(),[version,setVersion]=useState(0),[reason,setReason]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const filters={environment:params.get('environment')||'PRODUCTION',state:params.get('state')||''};
+ const result=useRead<Report>(`/reports/payment-aging?${new URLSearchParams(filters)}`,version),data=result?.data,pending=useRef<AbortController|null>(null);
+ useEffect(()=>()=>{pending.current?.abort();pending.current=null;},[]);
+ async function download(){if(!session||!data||pending.current)return;const controller=new AbortController();pending.current=controller;setBusy(true);setMessage('');try{
+  const r=await api<Report&{csv:string;filename:string}>('/reports/payment-aging/export',{method:'POST',csrf:session.csrf_token,signal:controller.signal,body:{filters:data.filters,reason:reason.trim()}});if(pending.current!==controller)return;
+  const url=URL.createObjectURL(new Blob([r.csv],{type:'text/csv;charset=utf-8;'})),a=document.createElement('a');a.href=url;a.download=r.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);setMessage('Payment aging CSV downloaded from a fresh audited snapshot. Record ages and counts may differ from this screen.');
+ }catch(e){if(pending.current===controller)setMessage(e instanceof Error?e.message:'Export unavailable.');}finally{if(pending.current===controller){pending.current=null;setBusy(false);}}}
+ return <section className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">Recorded payment aging</h1><Link className="text-emerald-800 underline" to="/payments">Payment records</Link><Button variant="outline" disabled={busy} onClick={()=>{setMessage('');setVersion(v=>v+1);}}>Refresh payment aging report</Button></div>
+ <p className="rounded-xl border bg-white p-4 text-sm">Review recorded payment and refund backlogs. Age bands are priorities for investigation, not confirmed provider failures or SLA breaches.</p>
+ <form className="flex flex-wrap items-end gap-3" onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);setParams(Object.fromEntries([...f.entries()].map(([k,v])=>[k,String(v)])));}}>
+ <label>Environment<NativeSelect className="block rounded border p-2" name="environment" defaultValue={filters.environment}><option value="PRODUCTION">Production</option><option value="SANDBOX">Sandbox · test payments</option></NativeSelect></label>
+ <label>State<NativeSelect className="block rounded border p-2" name="state" defaultValue={filters.state}><option value="">All accessible states</option>{data?.states.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}{filters.state&&!data?.states.some(s=>s.code===filters.state)&&<option value={filters.state}>{filters.state}</option>}</NativeSelect></label><Button type="submit" disabled={busy}>Apply payment aging filters</Button></form><p className="text-xs">All recorded ages are included. Sandbox and production are reported separately.</p>
+ {!result&&<p role="status">Loading payment aging report…</p>}{result?.error&&<p role="alert">{result.error}</p>}
+ {data&&<><p className="text-sm">{data.scope} · Snapshot {new Date(data.generated_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})} IST</p><p className="rounded border bg-amber-50 p-3 text-sm">{data.basis}</p>
+ <p className="text-lg font-semibold">{data.total_records} payment records · {data.filters.environment}</p>{data.filters.environment==='SANDBOX'&&<p className="rounded border bg-amber-50 p-3">Test payments only. These amounts do not represent real money.</p>}
+ {data.items.length===0&&<p>No recorded payment exceptions in this selection.</p>}
+ <div className="overflow-x-auto rounded-xl border bg-white"><AdminTable className="w-full text-left text-sm"><caption className="p-4 text-left font-semibold">Recorded backlog by age</caption><thead><tr>{['Category / amount basis','Age / clock','Records','Amount (INR)','Data / refund attention'].map(h=><th className="p-3" key={h}>{h}</th>)}</tr></thead><tbody>{data.items.map(i=><tr key={i.category+':'+i.bucket} className="border-t"><td className="p-3">{i.label}<p className="text-xs text-slate-500">{i.basis}</p></td><td className="p-3">{i.age_label}<p className="text-xs text-slate-500">{i.clock}</p></td><td className="p-3">{i.records}</td><td className="p-3">{i.amount===null?'Unavailable':new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).format(Number(i.amount))}</td><td className="p-3">{i.invalid_amounts} invalid amounts · {i.needs_attention} refunds needing review</td></tr>)}</tbody></AdminTable></div>
+ {session?.staff.permissions.includes('finance.reports.export')&&<section className="space-y-3 rounded-xl border bg-white p-5"><h2 className="font-semibold">Export payment aging CSV</h2><p className="text-sm">Aggregate counts with separate amount and age definitions. No participant or journey identifiers. No combined money total.</p><label className="block">Payment aging export reason<Input className="block w-full rounded border p-2" maxLength={500} value={reason} disabled={busy} onChange={e=>setReason(e.target.value)}/></label><Button disabled={busy||reason.trim().length<10} onClick={()=>void download()}>{busy?'Preparing payment aging export…':'Download payment aging CSV'}</Button></section>}</>}{message&&<p role="status">{message}</p>}</section>;
+}

@@ -1,0 +1,9 @@
+import {it,expect,afterEach} from 'vitest';
+import {render,screen,cleanup} from '@testing-library/react';
+import {MatchingQueueHealth,type MatchingQueueSnapshot} from './MatchingQueueHealth';
+afterEach(cleanup);
+const snapshot:MatchingQueueSnapshot={status:'recorded',paused:false,checked_at:'2026-10-24T06:00:00Z',counts:{waiting:2,prioritized:3,active:1,delayed:4,paused:0,'waiting-children':0,failed:5,completed:6}};
+it('shows recorded counts and explains the limits of a queue snapshot',()=>{render(<MatchingQueueHealth snapshot={snapshot}/>);expect(screen.getByText('Queue not paused')).toBeTruthy();expect(screen.getByText('Retained failed')).toBeTruthy();expect(screen.getByText('5')).toBeTruthy();expect(screen.getByText(/does not prove a worker/)).toBeTruthy();expect(screen.queryAllByRole('button')).toHaveLength(0);});
+it('shows paused state and operator guidance',()=>{render(<MatchingQueueHealth snapshot={{...snapshot,paused:true}}/>);expect(screen.getByText('Queue paused')).toBeTruthy();expect(screen.getByText(/Ask the operator/)).toBeTruthy();});
+it('distinguishes absent queue from unavailable monitoring',()=>{const v=render(<MatchingQueueHealth snapshot={{...snapshot,status:'not_observed'}}/>);expect(screen.getByRole('status').textContent).toContain('No matching queue recorded');v.rerender(<MatchingQueueHealth/>);expect(screen.getByRole('status').textContent).toContain('unavailable');expect(screen.queryByText('Retained completed')).toBeNull();});
+it('fails closed for partial, negative or malformed snapshots',()=>{const v=render(<MatchingQueueHealth snapshot={{...snapshot,counts:{waiting:-1}}}/>);expect(screen.getByRole('status').textContent).toContain('unavailable');v.rerender(<MatchingQueueHealth snapshot={{...snapshot,checked_at:'invalid'}}/>);expect(screen.getByRole('status').textContent).toContain('unavailable');});

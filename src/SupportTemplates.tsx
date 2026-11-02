@@ -1,0 +1,3 @@
+import {NotificationTemplates, type TemplateConfig} from './NotificationTemplates';
+const config:TemplateConfig={compact:true,permission:'content.support_templates.manage',path:'/support-templates',heading:'Support notification templates',description:'Generic English notices for support conversations. Published wording applies to newly queued notifications. Existing messages keep their original text. Use concise Gilo wording without customer details, links or placeholders. Previewing never sends a notification.',labels:{support_update:'Support conversation update',support_closed:'Customer-confirmed closure'}};
+export function SupportTemplates(){return <NotificationTemplates config={config}/>;}
